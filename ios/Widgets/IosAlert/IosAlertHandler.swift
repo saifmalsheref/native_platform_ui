@@ -30,6 +30,7 @@ enum IosAlertHandler {
         let cancelDict = args["cancelButton"] as? [String: Any]
         let layoutRtl = args["layoutRtl"] as? Bool ?? false
         let barrierDismissible = args["barrierDismissible"] as? Bool ?? false
+        let materialBrightness = args["materialBrightness"] as? Int
 
         DispatchQueue.main.async {
             guard let presenter = topViewController() else {
@@ -56,6 +57,7 @@ enum IosAlertHandler {
                 preferredStyle: .alert
             )
 
+            applyUserInterfaceStyle(to: alert, materialBrightness: materialBrightness)
             applyLayoutDirection(to: alert, rtl: layoutRtl)
 
             applyAttributedText(
@@ -119,6 +121,21 @@ enum IosAlertHandler {
                 }
             }
         }
+    }
+
+    private static func applyUserInterfaceStyle(
+        to alert: UIAlertController,
+        materialBrightness: Int?
+    ) {
+        guard let materialBrightness else { return }
+        let style: UIUserInterfaceStyle
+        switch materialBrightness {
+        case 0: style = .light
+        case 1: style = .dark
+        default: return
+        }
+        alert.overrideUserInterfaceStyle = style
+        alert.view.overrideUserInterfaceStyle = style
     }
 
     private static func makeAction(
