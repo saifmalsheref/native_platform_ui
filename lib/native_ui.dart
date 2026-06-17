@@ -1,3 +1,4 @@
+export 'src/ios_alert.dart';
 export 'src/ios_helper.dart';
 export 'src/native_ui.dart';
 export 'src/options/glass_options.dart';

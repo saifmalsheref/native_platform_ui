@@ -56,6 +56,16 @@ public class NativeUiPlugin: NSObject, FlutterPlugin {
       } else {
         result(false)
       }
+    case "showIosAlert":
+      guard let args = call.arguments as? [String: Any] else {
+        result(FlutterError(
+          code: "INVALID_ARGUMENTS",
+          message: "Expected map",
+          details: nil
+        ))
+        return
+      }
+      IosAlertHandler.present(args: args, flutterResult: result)
     default:
       result(FlutterMethodNotImplemented)
     }
