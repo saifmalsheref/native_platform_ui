@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:native_ui/native_ui.dart';
+import 'package:native_platform_ui/native_platform_ui.dart';
 
 /// Native [UiKitView] SF Symbols break inside modal routes (sheets, dialogs).
 bool useNativeSfSymbolPlatformView(BuildContext? context) {

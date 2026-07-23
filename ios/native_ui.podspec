@@ -5,9 +5,10 @@
 Pod::Spec.new do |s|
   s.name             = 'native_ui'
   s.version          = '0.0.1'
-  s.summary          = 'A new Flutter plugin project.'
+  s.summary          = 'Native iOS UI widgets for Flutter (native_platform_ui).'
   s.description      = <<-DESC
-A new Flutter plugin project.
+Native iOS UI for Flutter — buttons, switches, SF Symbols, liquid glass,
+alerts, popovers, and bottom navigation via platform views.
                        DESC
   s.homepage         = 'http://example.com'
   s.license          = { :file => '../LICENSE' }
@@ -23,13 +24,7 @@ A new Flutter plugin project.
     'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386',
     'IPHONEOS_DEPLOYMENT_TARGET' => '15.0',
   }
-  # native_ui requires iOS 15+ APIs (UIButton.Configuration).
+  # native_platform_ui requires iOS 15+ APIs (UIButton.Configuration).
   s.user_target_xcconfig = { 'IPHONEOS_DEPLOYMENT_TARGET' => '15.0' }
   s.swift_version = '5.0'
-
-  # If your plugin requires a privacy manifest, for example if it uses any
-  # required reason APIs, update the PrivacyInfo.xcprivacy file to describe your
-  # plugin's privacy impact, and then uncomment this line. For more information,
-  # see https://developer.apple.com/documentation/bundleresources/privacy_manifest_files
-  # s.resource_bundles = {'native_ui_privacy' => ['Resources/PrivacyInfo.xcprivacy']}
 end

@@ -229,6 +229,10 @@ final class IosGlassUnionRegistry {
         }
         groups[key] = entries
         refreshGroup(key: key)
+        // Platform views often register before layout; retry after the next frame.
+        DispatchQueue.main.async { [weak self] in
+            self?.refreshGroup(key: key)
+        }
     }
 
     func unregister(view: UIView) {
@@ -264,25 +268,48 @@ final class IosGlassUnionRegistry {
                 in: view.bounds
             )
 
-            if entry.config.shapeKind == 2 || sorted.count > 1 {
-                if isFirst && isLast {
-                    view.layer.maskedCorners = [
-                        .layerMinXMinYCorner,
-                        .layerMaxXMinYCorner,
-                        .layerMinXMaxYCorner,
-                        .layerMaxXMaxYCorner,
-                    ]
-                } else if isFirst {
-                    view.layer.maskedCorners = [.layerMinXMinYCorner, .layerMinXMaxYCorner]
-                } else if isLast {
-                    view.layer.maskedCorners = [.layerMaxXMinYCorner, .layerMaxXMaxYCorner]
-                } else {
-                    view.layer.maskedCorners = []
-                }
-                view.layer.cornerRadius = radius
-                entry.effectView?.layer.cornerRadius = radius
+            guard radius > 0 else { continue }
+
+            let maskedCorners: CACornerMask
+            if isFirst && isLast {
+                maskedCorners = [
+                    .layerMinXMinYCorner,
+                    .layerMaxXMinYCorner,
+                    .layerMinXMaxYCorner,
+                    .layerMaxXMaxYCorner,
+                ]
+            } else if isFirst {
+                maskedCorners = [.layerMinXMinYCorner, .layerMinXMaxYCorner]
+            } else if isLast {
+                maskedCorners = [.layerMaxXMinYCorner, .layerMaxXMaxYCorner]
+            } else {
+                maskedCorners = []
             }
+
+            applyUnionMask(
+                to: view,
+                effectView: entry.effectView,
+                radius: radius,
+                maskedCorners: maskedCorners
+            )
         }
+    }
+
+    private func applyUnionMask(
+        to view: UIView,
+        effectView: UIVisualEffectView?,
+        radius: CGFloat,
+        maskedCorners: CACornerMask
+    ) {
+        view.layer.cornerCurve = .continuous
+        view.clipsToBounds = true
+        view.layer.cornerRadius = radius
+        view.layer.maskedCorners = maskedCorners
+
+        effectView?.layer.cornerCurve = .continuous
+        effectView?.clipsToBounds = true
+        effectView?.layer.cornerRadius = radius
+        effectView?.layer.maskedCorners = maskedCorners
     }
 }
 

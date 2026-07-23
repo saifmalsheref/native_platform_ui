@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:native_ui/src/platform.dart';
+import 'package:native_platform_ui/src/platform.dart';
 
 /// Tracks Flutter modal overlays (reserved for future native compositing hooks).
 ///

@@ -229,9 +229,10 @@ final class IosButtonPlatformView: NSObject, FlutterPlatformView, UIContextMenuI
 
     private func buildPopoverUIMenu() -> UIMenu {
         let actions: [UIAction] = popoverMenuItems.enumerated().map { index, item in
-            UIAction(
+            let image = item.systemImage.flatMap { UIImage(systemName: $0) }
+            return UIAction(
                 title: item.title,
-                image: item.systemImage.flatMap { UIImage(systemName: $0) },
+                image: image,
                 attributes: item.isDestructive ? .destructive : []
             ) { [weak self] _ in
                 guard let self else { return }
@@ -350,6 +351,18 @@ final class IosButtonPlatformView: NSObject, FlutterPlatformView, UIContextMenuI
             if v >= 0 {
                 config.baseForegroundColor = Self.uiColor(fromArgb: v)
             }
+        }
+
+        if dict["paddingTop"] != nil
+            || dict["paddingLeading"] != nil
+            || dict["paddingBottom"] != nil
+            || dict["paddingTrailing"] != nil {
+            config.contentInsets = NSDirectionalEdgeInsets(
+                top: CGFloat(truncating: (dict["paddingTop"] as? NSNumber) ?? 0),
+                leading: CGFloat(truncating: (dict["paddingLeading"] as? NSNumber) ?? 0),
+                bottom: CGFloat(truncating: (dict["paddingBottom"] as? NSNumber) ?? 0),
+                trailing: CGFloat(truncating: (dict["paddingTrailing"] as? NSNumber) ?? 0)
+            )
         }
 
         button.configuration = config

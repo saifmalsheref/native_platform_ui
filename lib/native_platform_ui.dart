@@ -1,4 +1,13 @@
+/// Native iOS UI widgets for Flutter (`UiKitView` / SwiftUI platform views).
+///
+/// Import:
+/// ```dart
+/// import 'package:native_platform_ui/native_platform_ui.dart';
+/// ```
+library;
+
 export 'src/ios_alert.dart';
+export 'src/show_ios_popover.dart';
 export 'src/ios_helper.dart';
 export 'src/native_ui.dart';
 export 'src/options/glass_options.dart';

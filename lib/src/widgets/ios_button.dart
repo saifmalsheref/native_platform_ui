@@ -1,6 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:native_ui/native_ui.dart';
+import 'package:native_platform_ui/native_platform_ui.dart';
+
+/// Layout axis for [IosButton.linkedButtons] (SwiftUI `VStack` / `HStack`).
+enum IosLinkedButtonsAxis {
+  /// Horizontal row (`HStack`).
+  row(0),
+
+  /// Vertical column (`VStack`) — pill-shaped glass container.
+  column(1);
+
+  const IosLinkedButtonsAxis(this.nativeCodec);
+
+  final int nativeCodec;
+}
 
 /// One segment in a native linked [IosButton] group (SwiftUI `ControlGroup`).
 class IosLinkedButtonItem {
@@ -11,32 +24,48 @@ class IosLinkedButtonItem {
     this.enabled = true,
     this.iconColor,
     this.iconSize,
+    this.padding,
+    this.bold = true,
   });
 
-  final String? sfSymbol;
+  final SfSymbols? sfSymbol;
   final String? title;
   final VoidCallback? onPressed;
   final bool enabled;
   final Color? iconColor;
   final double? iconSize;
 
+  /// Per-segment insets (e.g. `EdgeInsets.only(top: 8)` on the first item).
+  final EdgeInsets? padding;
+  final bool bold;
+
   Map<String, Object?> encode({
     required Color defaultIconColor,
     required double defaultIconSize,
-  }) => <String, Object?>{
-    'sfSymbol': sfSymbol,
-    'title': title,
-    'enabled': enabled && onPressed != null,
-    'iconColor': (iconColor ?? defaultIconColor).toARGB32(),
-    'iconSize': iconSize ?? defaultIconSize,
-  };
+  }) {
+    final Map<String, Object?> map = <String, Object?>{
+      'sfSymbol': sfSymbol?.value,
+      'title': title,
+      'enabled': enabled && onPressed != null,
+      'iconColor': (iconColor ?? defaultIconColor).toARGB32(),
+      'iconSize': iconSize ?? defaultIconSize,
+      'bold': bold,
+    };
+    if (padding != null) {
+      map['paddingTop'] = padding!.top;
+      map['paddingLeading'] = padding!.left;
+      map['paddingBottom'] = padding!.bottom;
+      map['paddingTrailing'] = padding!.right;
+    }
+    return map;
+  }
 }
 
 /// Native `UIButton` on iOS ([UiKitView]) with liquid-glass chrome (`UIGlassEffect`
 /// on iOS 26 when available). [onPressed] / [onLongPress] are handled in UIKit.
 ///
 /// When [linkedButtons] is non-null, renders a native linked control group
-/// (SwiftUI `ControlGroup` + `.controlGroupStyle(.navigation)`).
+/// inside one glass container (SwiftUI `GlassEffectContainer` + union).
 class IosButton extends StatefulWidget {
   const IosButton({
     super.key,
@@ -56,14 +85,16 @@ class IosButton extends StatefulWidget {
     this.materialBrightness,
     this.iconColor,
     this.iconSize = 22,
-    this.width = 45,
-    this.height = 45,
+    this.width,
+    this.height,
     this.disabledOpacity = 0.45,
     this.popoverLink,
     this.linkedButtons,
+    this.linkedButtonsAxis = IosLinkedButtonsAxis.row,
     this.glass,
     this.glassUnion,
     this.glassContainer,
+    this.padding,
   }) : assert(
          linkedButtons == null || linkedButtons.length >= 2,
          'linkedButtons requires at least 2 items',
@@ -94,13 +125,17 @@ class IosButton extends StatefulWidget {
 
   final IosPopoverLink? popoverLink;
 
-  /// When set, renders a native linked button row instead of a single button.
+  /// When set, renders a native linked button group in one glass pill.
   final List<IosLinkedButtonItem>? linkedButtons;
+
+  /// [IosLinkedButtonsAxis.column] for a vertical pill like native map controls.
+  final IosLinkedButtonsAxis linkedButtonsAxis;
 
   /// Unified glass config; overrides [blurMaterial], [tintColor], etc. when set.
   final IosGlassOptions? glass;
   final IosGlassUnion? glassUnion;
   final IosGlassContainerOptions? glassContainer;
+  final EdgeInsetsGeometry? padding;
 
   bool get _isLinkedGroup =>
       linkedButtons != null && linkedButtons!.length >= 2;
@@ -125,27 +160,89 @@ class _IosButtonState extends State<IosButton> {
   static const double _linkedSegmentCoreWidth = 24;
   static const double _linkedSegmentWidth =
       _linkedSegmentHorizontalInset * 2 + _linkedSegmentCoreWidth;
+  static const double _linkedSegmentVerticalInset = 8;
+  static const double _linkedSegmentCoreHeight = 28;
+  static const double _linkedSegmentHeight =
+      _linkedSegmentVerticalInset * 2 + _linkedSegmentCoreHeight;
   static const double _defaultSide = 45;
+  static const double _linkedColumnWidth = 52;
+
+  bool _usesExplicitSize(double? value) =>
+      value != null && value != _defaultSide;
+
+  double _resolvedLinkedWidth(int count) {
+    if (_isLinkedColumn) {
+      return _usesExplicitSize(widget.width)
+          ? widget.width!
+          : _linkedColumnWidth;
+    }
+    if (_usesExplicitSize(widget.width)) {
+      return widget.width!;
+    }
+    return count * _linkedSegmentWidth;
+  }
+
+  double _resolvedLinkedHeight(int count) {
+    if (_isLinkedColumn) {
+      if (_usesExplicitSize(widget.height)) {
+        return widget.height!;
+      }
+      return count * _linkedSegmentHeight;
+    }
+    if (_usesExplicitSize(widget.height)) {
+      return widget.height!;
+    }
+    return 36;
+  }
 
   bool get _usesFlutterChild => widget.child != null;
 
-  ({double? width, double height}) _resolveButtonSize() {
+  ({double width, double height}) _resolveButtonSize() {
     final double? width = widget.width;
     final double? height = widget.height;
 
-    if (height != null) {
+    if (width != null && height != null) {
       return (width: width, height: height);
     }
     if (width != null && width.isFinite) {
-      return (width: width, height: width);
+      return (width: width, height: height ?? width);
     }
-    return (width: width, height: _defaultSide);
+    if (height != null) {
+      return (width: width ?? height, height: height);
+    }
+    return (width: _defaultSide, height: _defaultSide);
+  }
+
+  bool get _isLinkedColumn =>
+      widget.linkedButtonsAxis == IosLinkedButtonsAxis.column;
+
+  double _effectiveLinkedCornerRadius() {
+    if (_isLinkedColumn) {
+      return _resolvedLinkedWidth(widget.linkedButtons!.length) / 2;
+    }
+    return widget.cornerRadius;
+  }
+
+  IosGlassOptions _defaultLinkedColumnGlass() {
+    return IosGlassOptions(
+      prominence: IosGlassProminence.prominent,
+      tint: widget.tintColor,
+      materialBrightness: widget.materialBrightness,
+      blurMaterial: widget.blurMaterial.nativeCodec,
+    );
   }
 
   IosGlassOptions _resolvedGlassOptions() {
+    final double cornerRadius = widget._isLinkedGroup
+        ? _effectiveLinkedCornerRadius()
+        : widget.cornerRadius;
+    final IosGlassOptions? glass =
+        widget._isLinkedGroup && _isLinkedColumn && widget.glass == null
+        ? _defaultLinkedColumnGlass()
+        : widget.glass;
     return resolveIosGlassOptions(
-      glass: widget.glass,
-      cornerRadius: widget.cornerRadius,
+      glass: glass,
+      cornerRadius: cornerRadius,
       interactive: widget.interactive,
       glassInteraction: widget.glassInteraction,
       tintColor: widget.tintColor,
@@ -169,16 +266,31 @@ class _IosButtonState extends State<IosButton> {
     return _encodeMaterialBrightness(b);
   }
 
+  Map<String, Object?>? _paddingNativeMap(BuildContext context) {
+    final EdgeInsetsGeometry? padding = widget.padding;
+    if (padding == null) return null;
+    final EdgeInsets resolved = padding.resolve(Directionality.of(context));
+    return <String, Object?>{
+      'paddingTop': resolved.top,
+      'paddingLeading': resolved.left,
+      'paddingBottom': resolved.bottom,
+      'paddingTrailing': resolved.right,
+    };
+  }
+
   Map<String, Object?> _sharedNativeParams(BuildContext context) {
+    final double cornerRadius = _effectiveLinkedCornerRadius();
     final IosGlassOptions options = _resolvedGlassOptions();
     return <String, Object?>{
       ...options.toNativeMap(
-        cornerRadius: widget.cornerRadius,
+        cornerRadius: cornerRadius,
         interactiveFallback: widget.interactive,
         themeBrightness: Theme.of(context).brightness,
       ),
       'materialBrightness': _materialCodecFor(context),
       'iconSize': widget.iconSize,
+      if (_paddingNativeMap(context) case final Map<String, Object?> map)
+        ...map,
     };
   }
 
@@ -203,6 +315,7 @@ class _IosButtonState extends State<IosButton> {
     final List<IosLinkedButtonItem> items = widget.linkedButtons!;
     return <String, Object?>{
       ..._sharedNativeParams(context),
+      'linkedButtonsAxis': widget.linkedButtonsAxis.nativeCodec,
       'linkedButtons': items
           .map(
             (IosLinkedButtonItem e) => e.encode(
@@ -215,19 +328,26 @@ class _IosButtonState extends State<IosButton> {
   }
 
   int _paramsFingerprint(BuildContext context) {
+    final double cornerRadius = _effectiveLinkedCornerRadius();
     final IosGlassOptions options = _resolvedGlassOptions();
     final int glassFp = options.fingerprint(
-      cornerRadius: widget.cornerRadius,
+      cornerRadius: cornerRadius,
       interactiveFallback: widget.interactive,
       materialBrightnessCodec: _materialCodecFor(context),
     );
     if (widget._isLinkedGroup) {
       final p = _linkedNativeParams(context);
-      return Object.hash(glassFp, Object.hashAll(p['linkedButtons'] as List));
+      return Object.hash(
+        glassFp,
+        widget.linkedButtonsAxis,
+        widget.padding,
+        Object.hashAll(p['linkedButtons'] as List),
+      );
     }
     final p = _nativeParams(context);
     return Object.hash(
       glassFp,
+      widget.padding,
       p['enabled'],
       p['hasLongPress'],
       p['sfSymbol'],
@@ -261,10 +381,11 @@ class _IosButtonState extends State<IosButton> {
   }
 
   Map<String, Object?> _initialNativeParams() {
+    final double cornerRadius = _effectiveLinkedCornerRadius();
     final IosGlassOptions options = _resolvedGlassOptions();
     return <String, Object?>{
       ...options.toNativeMap(
-        cornerRadius: widget.cornerRadius,
+        cornerRadius: cornerRadius,
         interactiveFallback: widget.interactive,
       )..['materialBrightness'] = _kMaterialUnspecified,
       'enabled':
@@ -282,49 +403,28 @@ class _IosButtonState extends State<IosButton> {
     };
   }
 
-  Map<String, Object?> _initialLinkedNativeParams() {
-    final List<IosLinkedButtonItem> items = widget.linkedButtons!;
-    final IosGlassOptions options = _resolvedGlassOptions();
-    return <String, Object?>{
-      ...options.toNativeMap(
-        cornerRadius: widget.cornerRadius,
-        interactiveFallback: widget.interactive,
-      )..['materialBrightness'] = _kMaterialUnspecified,
-      'iconSize': widget.iconSize,
-      'linkedButtons': items
-          .map(
-            (IosLinkedButtonItem e) => e.encode(
-              defaultIconColor:
-                  widget.iconColor ??
-                  (Theme.of(context).brightness == Brightness.dark
-                      ? Colors.white
-                      : Colors.black),
-              defaultIconSize: widget.iconSize,
-            ),
-          )
-          .toList(),
-    };
-  }
+  bool _embedParamsReady = false;
 
   @override
   void initState() {
     super.initState();
-    if (isNativeUiSupported) {
-      _creationParams = widget._isLinkedGroup
-          ? _initialLinkedNativeParams()
-          : _initialNativeParams();
-    }
-  }
-
-  @override
-  void didUpdateWidget(IosButton oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _flushNativeParamsIfNeeded(context);
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    if (isNativeUiSupported && !_embedParamsReady) {
+      _creationParams = widget._isLinkedGroup
+          ? _linkedNativeParams(context)
+          : _initialNativeParams();
+      _embedParamsReady = true;
+    }
+    _flushNativeParamsIfNeeded(context);
+  }
+
+  @override
+  void didUpdateWidget(IosButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
     _flushNativeParamsIfNeeded(context);
   }
 
@@ -405,71 +505,87 @@ class _IosButtonState extends State<IosButton> {
 
   Widget _fallbackLinkedGroup(BuildContext context) {
     final items = widget.linkedButtons!;
-    return Material(
-      color: widget.tintColor ?? Theme.of(context).colorScheme.surface,
-      borderRadius: BorderRadius.circular(widget.cornerRadius),
-      clipBehavior: Clip.antiAlias,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (int i = 0; i < items.length; i++)
-            InkWell(
-              onTap: items[i].enabled ? items[i].onPressed : null,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: _linkedSegmentHorizontalInset,
-                ),
-                child: SizedBox(
-                  width: _linkedSegmentCoreWidth,
-                  height: widget.height ?? 36,
-                  child: Center(
-                    child: items[i].sfSymbol != null
-                        ? Icon(
-                            Icons.circle,
-                            size: widget.iconSize,
-                            color: color,
-                          )
-                        : Text(items[i].title ?? ''),
-                  ),
-                ),
+    final double radius = _effectiveLinkedCornerRadius();
+    final children = <Widget>[
+      for (int i = 0; i < items.length; i++)
+        InkWell(
+          onTap: items[i].enabled ? items[i].onPressed : null,
+          child: Padding(
+            padding:
+                items[i].padding ??
+                (_isLinkedColumn
+                    ? EdgeInsets.symmetric(
+                        vertical: _linkedSegmentVerticalInset,
+                      )
+                    : const EdgeInsets.symmetric(
+                        horizontal: _linkedSegmentHorizontalInset,
+                      )),
+            child: SizedBox(
+              width: _isLinkedColumn
+                  ? _resolvedLinkedWidth(items.length)
+                  : _linkedSegmentCoreWidth,
+              height: _isLinkedColumn
+                  ? _linkedSegmentCoreHeight
+                  : _resolvedLinkedHeight(items.length),
+              child: Center(
+                child: items[i].sfSymbol != null
+                    ? Icon(Icons.circle, size: widget.iconSize, color: color)
+                    : Text(items[i].title ?? ''),
               ),
             ),
-        ],
-      ),
-    );
-  }
+          ),
+        ),
+    ];
 
-  double? get _linkedGroupWidth {
-    final int count = widget.linkedButtons?.length ?? 0;
-    if (count < 2) {
-      return null;
-    }
-    return count * _linkedSegmentWidth;
+    return Material(
+      color: widget.tintColor ?? Theme.of(context).colorScheme.surface,
+      borderRadius: BorderRadius.circular(radius),
+      clipBehavior: Clip.antiAlias,
+      child: _isLinkedColumn
+          ? Column(mainAxisSize: MainAxisSize.min, children: children)
+          : Row(mainAxisSize: MainAxisSize.min, children: children),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    Widget child;
     if (widget._isLinkedGroup) {
-      return _buildLinkedGroup(context);
+      child = _buildLinkedGroup(context);
+    } else {
+      child = _buildSingleButton(context);
     }
-    return _buildSingleButton(context);
+    final EdgeInsetsGeometry? padding = widget.padding;
+    if (padding == null) {
+      return child;
+    }
+    return Padding(padding: padding, child: child);
   }
 
   Widget _buildLinkedGroup(BuildContext context) {
+    final int count = widget.linkedButtons!.length;
+    final double width = _resolvedLinkedWidth(count);
+    final double height = _resolvedLinkedHeight(count);
+
     if (!isNativeUiSupported) {
       return SizedBox(
-        width: widget.width ?? _linkedGroupWidth,
-        height: widget.height ?? 36,
+        width: width,
+        height: height,
         child: _fallbackLinkedGroup(context),
       );
     }
 
+    final Map<String, Object?>? params = _creationParams;
+    if (params == null) {
+      return SizedBox(width: width, height: height);
+    }
+
     return SizedBox(
-      width: widget.width ?? _linkedGroupWidth,
-      height: widget.height ?? 36,
+      width: width,
+      height: height,
       child: UiKitView(
         viewType: _linkedViewType,
-        creationParams: _creationParams!,
+        creationParams: params,
         creationParamsCodec: const StandardMessageCodec(),
         onPlatformViewCreated: (int id) {
           _channel = MethodChannel('$_linkedChannelPrefix$id')
@@ -488,9 +604,14 @@ class _IosButtonState extends State<IosButton> {
   }
 
   Widget _buildNativeUiKitButton(BuildContext context) {
+    final Map<String, Object?>? params = _creationParams;
+    if (params == null) {
+      return const SizedBox.shrink();
+    }
+
     return UiKitView(
       viewType: _viewType,
-      creationParams: _creationParams!,
+      creationParams: params,
       creationParamsCodec: const StandardMessageCodec(),
       onPlatformViewCreated: (int id) {
         widget.popoverLink?.nativeButtonViewId = id;
@@ -517,7 +638,7 @@ class _IosButtonState extends State<IosButton> {
   }
 
   Widget _buildChildOverlayButton(BuildContext context) {
-    final ({double? width, double height}) size = _resolveButtonSize();
+    final ({double width, double height}) size = _resolveButtonSize();
 
     if (!isNativeUiSupported) {
       return SizedBox(
@@ -548,7 +669,7 @@ class _IosButtonState extends State<IosButton> {
       return _buildChildOverlayButton(context);
     }
 
-    final ({double? width, double height}) size = _resolveButtonSize();
+    final ({double width, double height}) size = _resolveButtonSize();
 
     if (!isNativeUiSupported) {
       return SizedBox(

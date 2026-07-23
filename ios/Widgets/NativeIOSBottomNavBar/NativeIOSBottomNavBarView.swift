@@ -157,7 +157,9 @@ class NativeIOSBottomNavBarView: NSObject, FlutterPlatformView {
             let inactiveTextColorValue = itemData["inactiveTextColor"] as? Int
             let activeImageColorValue = itemData["activeImageColor"] as? Int
             let inactiveImageColorValue = itemData["inactiveImageColor"] as? Int
-            
+            let iconSize = parseIconSize(itemData["iconSize"])
+            let activeIconSize = parseIconSize(itemData["activeIconSize"])
+
             let tabBarItem = createTabBarItem(
                 title: title,
                 iconName: iconName,
@@ -168,6 +170,8 @@ class NativeIOSBottomNavBarView: NSObject, FlutterPlatformView {
                 activeIconName: activeIconName,
                 activeIconType: activeIconType,
                 activeIconData: activeIconType == "svg" ? activeIconData : nil,
+                iconSize: iconSize,
+                activeIconSize: activeIconSize,
                 activeTextColor: activeTextColorValue != nil ? UIColor(hex: UInt32(activeTextColorValue!)) : nil,
                 inactiveTextColor: inactiveTextColorValue != nil ? UIColor(hex: UInt32(inactiveTextColorValue!)) : nil,
                 activeImageColor: activeImageColorValue != nil ? UIColor(hex: UInt32(activeImageColorValue!)) : nil,
@@ -299,38 +303,64 @@ class NativeIOSBottomNavBarView: NSObject, FlutterPlatformView {
         name: String?,
         type: String?,
         data: String?,
-        assetImage: String?
+        assetImage: String?,
+        size: CGFloat? = nil
     ) -> UIImage? {
+        let targetSize = size ?? 22
+
         // SVG from base64
         if let type = type, type == "svg", let data = data,
            let decoded = Data(base64Encoded: data),
            let uiImage = UIImage(data: decoded) {
-            return uiImage
+            return scaleImage(uiImage, to: targetSize)
         }
-        
+
         // Asset image
-        if let type = type, type == "asset", let name = name {
-            return UIImage(named: name)
+        if let type = type, type == "asset", let name = name,
+           let image = UIImage(named: name) {
+            return scaleImage(image, to: targetSize)
         }
-        
+
         // SF Symbol
         if let name = name, #available(iOS 13.0, *) {
-            if let sfSymbol = UIImage(systemName: name) {
+            let config = UIImage.SymbolConfiguration(pointSize: targetSize, weight: .regular)
+            if let sfSymbol = UIImage(systemName: name, withConfiguration: config) {
                 return sfSymbol
             }
         }
-        
+
         // Fallback to assetImage if provided
-        if let assetImage = assetImage {
-            return UIImage(named: assetImage)
+        if let assetImage = assetImage, let image = UIImage(named: assetImage) {
+            return scaleImage(image, to: targetSize)
         }
-        
+
         // Final fallback
         if #available(iOS 13.0, *) {
-            return UIImage(systemName: "circle")
+            let config = UIImage.SymbolConfiguration(pointSize: targetSize, weight: .regular)
+            return UIImage(systemName: "circle", withConfiguration: config)
         } else {
             return UIImage()
         }
+    }
+
+    private func scaleImage(_ image: UIImage, to pointSize: CGFloat) -> UIImage {
+        let size = CGSize(width: pointSize, height: pointSize)
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = UIScreen.main.scale
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
+        return renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
+    }
+
+    private func parseIconSize(_ value: Any?) -> CGFloat? {
+        if let value = value as? Double {
+            return CGFloat(value)
+        }
+        if let value = value as? NSNumber {
+            return CGFloat(value.doubleValue)
+        }
+        return nil
     }
     
     private func createTabBarItem(
@@ -343,6 +373,8 @@ class NativeIOSBottomNavBarView: NSObject, FlutterPlatformView {
         activeIconName: String? = nil,
         activeIconType: String? = nil,
         activeIconData: String? = nil,
+        iconSize: CGFloat? = nil,
+        activeIconSize: CGFloat? = nil,
         activeTextColor: UIColor? = nil,
         inactiveTextColor: UIColor? = nil,
         activeImageColor: UIColor? = nil,
@@ -352,14 +384,16 @@ class NativeIOSBottomNavBarView: NSObject, FlutterPlatformView {
             name: iconName,
             type: iconType,
             data: iconType == "svg" ? iconData : nil,
-            assetImage: assetImage
+            assetImage: assetImage,
+            size: iconSize
         )
-        
+
         let selectedImage = loadImage(
             name: activeIconName,
             type: activeIconType,
             data: activeIconType == "svg" ? activeIconData : nil,
-            assetImage: nil
+            assetImage: nil,
+            size: activeIconSize ?? iconSize
         ) ?? normalImage // Fallback to normal image if activeIcon not provided
         
         // Store original images for tinting later
@@ -708,7 +742,9 @@ class NativeIOSBottomNavBarView: NSObject, FlutterPlatformView {
                 let inactiveTextColorValue = itemData["inactiveTextColor"] as? Int
                 let activeImageColorValue = itemData["activeImageColor"] as? Int
                 let inactiveImageColorValue = itemData["inactiveImageColor"] as? Int
-                
+                let iconSize = parseIconSize(itemData["iconSize"])
+                let activeIconSize = parseIconSize(itemData["activeIconSize"])
+
                 let tabBarItem = createTabBarItem(
                     title: title,
                     iconName: iconName,
@@ -719,6 +755,8 @@ class NativeIOSBottomNavBarView: NSObject, FlutterPlatformView {
                     activeIconName: activeIconName,
                     activeIconType: activeIconType,
                     activeIconData: activeIconType == "svg" ? activeIconData : nil,
+                    iconSize: iconSize,
+                    activeIconSize: activeIconSize,
                     activeTextColor: activeTextColorValue != nil ? UIColor(hex: UInt32(activeTextColorValue!)) : nil,
                     inactiveTextColor: inactiveTextColorValue != nil ? UIColor(hex: UInt32(inactiveTextColorValue!)) : nil,
                     activeImageColor: activeImageColorValue != nil ? UIColor(hex: UInt32(activeImageColorValue!)) : nil,
@@ -769,43 +807,38 @@ class NativeIOSBottomNavBarView: NSObject, FlutterPlatformView {
             // Update title
             originalTitles[index] = title
             item.title = isPadIconsOnlyLayout ? nil : title
-            
-            let newImage = loadImage(
-                name: iconName,
-                type: iconType,
-                data: iconType == "svg" ? iconData : nil,
-                assetImage: assetImage
-            )
-            
-            let newSelectedImage = loadImage(
-                name: activeIconName,
-                type: activeIconType,
-                data: activeIconType == "svg" ? activeIconData : nil,
-                assetImage: nil
-            ) ?? newImage // Fallback to normal image if activeIcon not provided
-            
-            // Store original images for tinting
-            if let newImage = newImage {
-                originalImages[index] = newImage
-            }
-            if let newSelectedImage = newSelectedImage {
-                originalSelectedImages[index] = newSelectedImage
-            }
-            
-            // Store original images for tinting
-            if let newImage = newImage {
-                originalImages[index] = newImage
-            }
-            if let newSelectedImage = newSelectedImage {
-                originalSelectedImages[index] = newSelectedImage
-            }
-            
-            // Get custom colors for this item
+
             let activeTextColorValue = itemData["activeTextColor"] as? Int
             let inactiveTextColorValue = itemData["inactiveTextColor"] as? Int
             let activeImageColorValue = itemData["activeImageColor"] as? Int
             let inactiveImageColorValue = itemData["inactiveImageColor"] as? Int
-            
+            let iconSize = parseIconSize(itemData["iconSize"])
+            let activeIconSize = parseIconSize(itemData["activeIconSize"])
+
+            let newImage = loadImage(
+                name: iconName,
+                type: iconType,
+                data: iconType == "svg" ? iconData : nil,
+                assetImage: assetImage,
+                size: iconSize
+            )
+
+            let newSelectedImage = loadImage(
+                name: activeIconName,
+                type: activeIconType,
+                data: activeIconType == "svg" ? activeIconData : nil,
+                assetImage: nil,
+                size: activeIconSize ?? iconSize
+            ) ?? newImage // Fallback to normal image if activeIcon not provided
+
+            // Store original images for tinting
+            if let newImage = newImage {
+                originalImages[index] = newImage
+            }
+            if let newSelectedImage = newSelectedImage {
+                originalSelectedImages[index] = newSelectedImage
+            }
+
             // Update item colors
             if activeTextColorValue != nil || inactiveTextColorValue != nil || activeImageColorValue != nil || inactiveImageColorValue != nil {
                 itemColors[index] = ItemColors(

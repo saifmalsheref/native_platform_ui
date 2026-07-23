@@ -5,7 +5,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:native_ui/src/platform.dart';
+import 'package:native_platform_ui/src/platform.dart';
 
 int _bottomNavItemsPayloadFingerprint(List<Map<String, dynamic>> data) {
   int h = 0;
@@ -24,6 +24,8 @@ int _bottomNavItemsPayloadFingerprint(List<Map<String, dynamic>> data) {
       m['activeImageColor'],
       m['inactiveImageColor'],
       m['assetImage'],
+      m['iconSize'],
+      m['activeIconSize'],
     );
   }
   return h;
@@ -44,6 +46,8 @@ class IOSNavItem {
     this.inactiveTextColor,
     this.activeImageColor,
     this.inactiveImageColor,
+    this.iconSize,
+    this.activeIconSize,
   });
 
   final String icon;
@@ -54,6 +58,8 @@ class IOSNavItem {
   final Color? inactiveTextColor;
   final Color? activeImageColor;
   final Color? inactiveImageColor;
+  final double? iconSize;
+  final double? activeIconSize;
 
   @override
   bool operator ==(Object other) {
@@ -66,7 +72,9 @@ class IOSNavItem {
             activeTextColor == other.activeTextColor &&
             inactiveTextColor == other.inactiveTextColor &&
             activeImageColor == other.activeImageColor &&
-            inactiveImageColor == other.inactiveImageColor;
+            inactiveImageColor == other.inactiveImageColor &&
+            iconSize == other.iconSize &&
+            activeIconSize == other.activeIconSize;
   }
 
   @override
@@ -79,6 +87,8 @@ class IOSNavItem {
         inactiveTextColor,
         activeImageColor,
         inactiveImageColor,
+        iconSize,
+        activeIconSize,
       );
 }
 
@@ -94,6 +104,8 @@ class NativeIOSBottomNavigationBar extends StatefulWidget {
     this.materialBrightness,
     this.height = 60,
     this.bottomMargin = 20,
+    this.iconSize,
+    this.activeIconSize,
   });
 
   final List<IOSNavItem> items;
@@ -107,6 +119,12 @@ class NativeIOSBottomNavigationBar extends StatefulWidget {
 
   final double height;
   final double bottomMargin;
+
+  /// Default icon size in points when [IOSNavItem.iconSize] is null.
+  final double? iconSize;
+
+  /// Default active icon size in points when [IOSNavItem.activeIconSize] is null.
+  final double? activeIconSize;
 
   @override
   State<NativeIOSBottomNavigationBar> createState() =>
@@ -139,8 +157,12 @@ class _NativeIOSBottomNavigationBarState
       <String, String>{};
   static const int _svgRasterCacheMaxEntries = 24;
 
-  static Future<String?> _rasterizeSvgAssetToPngBase64(String assetPath) async {
-    final String? cached = _svgRasterPngBase64Cache[assetPath];
+  static Future<String?> _rasterizeSvgAssetToPngBase64(
+    String assetPath, {
+    required double size,
+  }) async {
+    final String cacheKey = '$assetPath@${size.toStringAsFixed(1)}';
+    final String? cached = _svgRasterPngBase64Cache[cacheKey];
     if (cached != null) {
       return cached;
     }
@@ -152,13 +174,14 @@ class _NativeIOSBottomNavigationBarState
       );
       ui.Image? image;
       try {
-        image = await pictureInfo.picture.toImage(24, 24);
+        final int pixelSize = size.ceil().clamp(12, 96);
+        image = await pictureInfo.picture.toImage(pixelSize, pixelSize);
         final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
         if (byteData == null) {
           return null;
         }
         final String encoded = base64Encode(byteData.buffer.asUint8List());
-        _svgRasterPngBase64Cache[assetPath] = encoded;
+        _svgRasterPngBase64Cache[cacheKey] = encoded;
         while (_svgRasterPngBase64Cache.length > _svgRasterCacheMaxEntries) {
           _svgRasterPngBase64Cache.remove(_svgRasterPngBase64Cache.keys.first);
         }
@@ -200,7 +223,9 @@ class _NativeIOSBottomNavigationBarState
     super.didUpdateWidget(oldWidget);
 
     final int itemsFp = _iosNavItemsFingerprint(widget.items);
-    if (itemsFp != _lastWidgetItemsFingerprint) {
+    if (itemsFp != _lastWidgetItemsFingerprint ||
+        widget.iconSize != oldWidget.iconSize ||
+        widget.activeIconSize != oldWidget.activeIconSize) {
       _lastWidgetItemsFingerprint = itemsFp;
       _prepareItemsData();
     } else if (_isPlatformViewCreated) {
@@ -400,13 +425,25 @@ class _NativeIOSBottomNavigationBarState
         (e.message?.contains('deallocated') ?? false);
   }
 
+  double _resolveIconSize(IOSNavItem item) =>
+      item.iconSize ?? widget.iconSize ?? 22;
+
+  double _resolveActiveIconSize(IOSNavItem item) =>
+      item.activeIconSize ?? item.iconSize ?? widget.activeIconSize ?? _resolveIconSize(item);
+
   Future<Map<String, dynamic>> _prepareItemData(IOSNavItem item) async {
+    final double iconSize = _resolveIconSize(item);
+    final double activeIconSize = _resolveActiveIconSize(item);
+
     String? iconData;
     String? iconType;
 
     final String iconLower = item.icon.toLowerCase();
     if (iconLower.endsWith('.svg')) {
-      final String? raster = await _rasterizeSvgAssetToPngBase64(item.icon);
+      final String? raster = await _rasterizeSvgAssetToPngBase64(
+        item.icon,
+        size: iconSize,
+      );
       if (raster != null) {
         iconData = raster;
         iconType = 'svg';
@@ -427,8 +464,10 @@ class _NativeIOSBottomNavigationBarState
     if (item.activeIcon != null) {
       final String activeIconLower = item.activeIcon!.toLowerCase();
       if (activeIconLower.endsWith('.svg')) {
-        final String? raster =
-            await _rasterizeSvgAssetToPngBase64(item.activeIcon!);
+        final String? raster = await _rasterizeSvgAssetToPngBase64(
+          item.activeIcon!,
+          size: activeIconSize,
+        );
         if (raster != null) {
           activeIconData = raster;
           activeIconType = 'svg';
@@ -453,6 +492,8 @@ class _NativeIOSBottomNavigationBarState
       'inactiveTextColor': item.inactiveTextColor?.toARGB32(),
       'activeImageColor': item.activeImageColor?.toARGB32(),
       'inactiveImageColor': item.inactiveImageColor?.toARGB32(),
+      'iconSize': iconSize,
+      'activeIconSize': activeIconSize,
     };
   }
 

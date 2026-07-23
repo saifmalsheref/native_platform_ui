@@ -2,9 +2,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:native_ui/src/ios_helper.dart';
-import 'package:native_ui/src/options/glass_options.dart';
-import 'package:native_ui/src/platform.dart';
+import 'package:native_platform_ui/src/ios_helper.dart';
+import 'package:native_platform_ui/src/options/glass_options.dart';
+import 'package:native_platform_ui/src/platform.dart';
 
 /// Native blur / Liquid Glass on **iOS only** (`UiKitView`).
 /// Updates after mount go through the method channel; [creationParams] stay frozen

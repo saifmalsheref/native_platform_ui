@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:native_ui/native_ui.dart';
+import 'package:native_platform_ui/native_platform_ui.dart';
 
-/// Native iOS UI widgets.
+/// Facade for native iOS UI widgets exposed by this package.
 abstract final class NativeUi {
   static const MethodChannel _channel = MethodChannel('native_ui');
 
@@ -26,6 +26,8 @@ abstract final class NativeUi {
     VoidCallback? onLongPress,
     List<IosPopoverAction>? actions,
     ValueChanged<int>? onPopoverSelected,
+    List<IosLinkedButtonItem>? linkedButtons,
+    IosLinkedButtonsAxis linkedButtonsAxis = IosLinkedButtonsAxis.row,
     IosButtonOptions? options,
   }) {
     final opts = options ?? const IosButtonOptions();
@@ -37,6 +39,10 @@ abstract final class NativeUi {
       onLongPress: onLongPress,
       actions: actions,
       onPopoverSelected: onPopoverSelected,
+      linkedButtons: linkedButtons,
+      linkedButtonsAxis: linkedButtonsAxis == IosLinkedButtonsAxis.row
+          ? opts.linkedButtonsAxis
+          : linkedButtonsAxis,
       enabled: opts.enabled,
       cornerRadius: opts.cornerRadius,
       blurMaterial: opts.blurMaterial,
@@ -49,6 +55,10 @@ abstract final class NativeUi {
       height: opts.height,
       disabledOpacity: opts.disabledOpacity,
       popoverLink: opts.popoverLink,
+      glass: opts.glass,
+      glassUnion: opts.glassUnion,
+      glassContainer: opts.glassContainer,
+      padding: opts.padding,
       child: child,
     );
   }
@@ -135,6 +145,8 @@ abstract final class NativeUi {
     Brightness? materialBrightness,
     double height = 60,
     double bottomMargin = 20,
+    double? iconSize,
+    double? activeIconSize,
   }) {
     return NativeIOSBottomNavigationBar(
       key: key,
@@ -146,6 +158,8 @@ abstract final class NativeUi {
       materialBrightness: materialBrightness,
       height: height,
       bottomMargin: bottomMargin,
+      iconSize: iconSize,
+      activeIconSize: activeIconSize,
     );
   }
 
@@ -171,10 +185,15 @@ class IosButtonOptions {
     this.materialBrightness,
     this.iconColor,
     this.iconSize = 22,
-    this.width = 45,
-    this.height = 45,
+    this.width,
+    this.height,
     this.disabledOpacity = 0.45,
     this.popoverLink,
+    this.glass,
+    this.glassUnion,
+    this.glassContainer,
+    this.linkedButtonsAxis = IosLinkedButtonsAxis.row,
+    this.padding,
   });
 
   final bool enabled;
@@ -189,4 +208,9 @@ class IosButtonOptions {
   final double? height;
   final double disabledOpacity;
   final IosPopoverLink? popoverLink;
+  final IosGlassOptions? glass;
+  final IosGlassUnion? glassUnion;
+  final IosGlassContainerOptions? glassContainer;
+  final IosLinkedButtonsAxis linkedButtonsAxis;
+  final EdgeInsetsGeometry? padding;
 }

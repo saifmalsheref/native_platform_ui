@@ -79,6 +79,9 @@ class IosGlassShape {
 }
 
 /// Shared namespace for `.glassEffectUnion(id:namespace:)` across platform views.
+///
+/// **Important:** reuse the same instance for every surface in a union group.
+/// Creating a new [IosGlassNamespace] per widget prevents linking.
 @immutable
 class IosGlassNamespace {
   IosGlassNamespace() : id = 'glass_ns_${_nextId++}';
@@ -88,7 +91,15 @@ class IosGlassNamespace {
   final String id;
 }
 
-/// Links two or more glass surfaces into one continuous effect (SwiftUI union).
+/// Links adjacent glass platform views so outer corners round and inner edges
+/// stay square (segmented control look).
+///
+/// Limitations with Flutter [UiKitView]:
+/// - Each widget is a separate native embed; glass cannot refract across views
+///   like SwiftUI `glassEffectUnion` / `UIGlassContainerEffect`.
+/// - Siblings must touch with **zero** Flutter spacing between them.
+/// - For multiple buttons in one pill, prefer [IosButton.linkedButtons] (single
+///   native view) instead of several [IosButton]s with [IosGlassUnion].
 @immutable
 class IosGlassUnion {
   const IosGlassUnion({required this.id, required this.namespace});
@@ -153,9 +164,8 @@ class IosGlassInteraction {
     pressGlow: false,
   );
 
-  IosGlassInteraction interactive([bool value = true]) => value
-      ? const IosGlassInteraction()
-      : none;
+  IosGlassInteraction interactive([bool value = true]) =>
+      value ? const IosGlassInteraction() : none;
 
   Map<String, Object?> toNativeMap() => <String, Object?>{
     'nativeInteractive': native,
@@ -238,9 +248,7 @@ class IosGlassOptions {
       prominence: prominence ?? this.prominence,
       shape: shape ?? this.shape,
       tint: clearTint ? null : (tint ?? this.tint),
-      interaction: clearInteraction
-          ? null
-          : (interaction ?? this.interaction),
+      interaction: clearInteraction ? null : (interaction ?? this.interaction),
       hierarchy: hierarchy ?? this.hierarchy,
       blurMaterial: blurMaterial ?? this.blurMaterial,
       materialBrightness: clearMaterialBrightness
@@ -259,18 +267,15 @@ class IosGlassOptions {
   }
 
   IosGlassOptions interactive([bool enabled = true]) => copyWith(
-    interaction: enabled
-        ? IosGlassInteraction.all
-        : IosGlassInteraction.none,
+    interaction: enabled ? IosGlassInteraction.all : IosGlassInteraction.none,
   );
 
   IosGlassOptions inShape(IosGlassShape next) => copyWith(shape: next);
 
   IosGlassOptions withUnion(IosGlassUnion next) => copyWith(union: next);
 
-  IosGlassOptions inContainer({double spacing = 0}) => copyWith(
-    container: IosGlassContainerOptions(spacing: spacing),
-  );
+  IosGlassOptions inContainer({double spacing = 0}) =>
+      copyWith(container: IosGlassContainerOptions(spacing: spacing));
 
   IosGlassInteraction resolveInteraction({bool interactiveFallback = false}) {
     return interaction ??
@@ -314,7 +319,7 @@ class IosGlassOptions {
       'tintColor': tint?.toARGB32(),
       'blurMaterial': blurMaterial,
       'glassHierarchy': hierarchy.nativeCodec,
-      if (materialCodec != null) 'materialBrightness': materialCodec,
+      'materialBrightness': ?materialCodec,
       if (union != null) ...union!.toNativeMap(),
       if (container != null) ...container!.toNativeMap(),
     };
@@ -413,7 +418,8 @@ IosGlassOptions resolveIosGlassOptions({
   final IosGlassOptions legacy = IosGlassOptions(
     shape: legacyShape,
     tint: tintColor,
-    interaction: glassInteraction ??
+    interaction:
+        glassInteraction ??
         (interactive ? IosGlassInteraction.all : IosGlassInteraction.none),
     hierarchy: glassHierarchy,
     blurMaterial: blurMaterial,

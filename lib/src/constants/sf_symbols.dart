@@ -1,3 +1,4 @@
+/// Typed SF Symbol names for [NativeUi.sfSymbol] / [SfSymbolsWidget].
 enum SfSymbols {
   personTextRectangleFill('person.text.rectangle.fill'),
   listBulletRectangleFill('list.bullet.rectangle.fill'),
@@ -12,6 +13,7 @@ enum SfSymbols {
   brainHeadProfile('brain.head.profile'),
   heartTextSquareFill('heart.text.square.fill'),
   starSquareFill('star.square.fill'),
+  docText('doc.text'),
   trophyFill('trophy.fill'),
   graduationcapFill('graduationcap.fill'),
   rosette('rosette'),
@@ -23,6 +25,7 @@ enum SfSymbols {
   plus('plus'),
   archiveboxFill('archivebox.fill'),
   doorLeftHandClosed('door.left.hand.closed'),
+  doorLeftHandOpen('door.left.hand.open'),
   folder('folder'),
   folderFill('folder.fill'),
   magazine('magazine'),
@@ -58,7 +61,22 @@ enum SfSymbols {
   link('link'),
   arrowClockwise('arrow.clockwise'),
   more('ellipsis'),
-  trash('trash');
+  trash('trash'),
+  lock('lock'),
+  public('globe'),
+  clock('clock'),
+  pencil('pencil'),
+  houseFill('house.fill'),
+  house('house'),
+  carFill('car.fill'),
+  car('car'),
+  heartFill('heart.fill'),
+  heart('heart'),
+  person('person'),
+  person2('person.2'),
+  personFill('person.fill'),
+  barcode('barcode'),
+  ;
 
   final String value;
   const SfSymbols(this.value);

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:native_ui/native_ui.dart';
+import 'package:native_platform_ui/native_platform_ui.dart';
 
 import 'platform_views.dart';
 

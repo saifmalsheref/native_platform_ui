@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:native_ui/src/platform.dart';
+import 'package:native_platform_ui/src/platform.dart';
 
 /// Native `UISwitch` on iOS ([UiKitView]); [Switch] on other platforms.
 class IosSwitch extends StatefulWidget {
