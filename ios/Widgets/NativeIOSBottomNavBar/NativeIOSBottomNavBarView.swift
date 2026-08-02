@@ -58,6 +58,9 @@ class NativeIOSBottomNavBarView: NSObject, FlutterPlatformView {
         tabBar.isTranslucent = false
         tabBar.frame = _view.bounds
         tabBar.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        if #available(iOS 13.4, *) {
+            tabBar.addInteraction(UIPointerInteraction(delegate: nil))
+        }
         
         // Force RTL layout to ensure items always start from right to left
         tabBar.semanticContentAttribute = .forceRightToLeft
