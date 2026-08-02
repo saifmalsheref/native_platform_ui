@@ -6,12 +6,12 @@ import UIKit
 private class TabBarContainerView: UIView {
     var onDidMoveToWindow: (() -> Void)?
     var onTraitCollectionDidChange: (() -> Void)?
+    var onSafeAreaInsetsDidChange: (() -> Void)?
+    var onLayoutSubviews: (() -> Void)?
     
     override func didMoveToWindow() {
         super.didMoveToWindow()
         if window != nil {
-            // View has entered the window hierarchy
-            // This is the perfect time to recalculate layout for Arabic text
             onDidMoveToWindow?()
         }
     }
@@ -22,6 +22,16 @@ private class TabBarContainerView: UIView {
             onTraitCollectionDidChange?()
         }
     }
+
+    override func safeAreaInsetsDidChange() {
+        super.safeAreaInsetsDidChange()
+        onSafeAreaInsetsDidChange?()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        onLayoutSubviews?()
+    }
 }
 
 class NativeIOSBottomNavBarView: NSObject, FlutterPlatformView {
@@ -31,6 +41,7 @@ class NativeIOSBottomNavBarView: NSObject, FlutterPlatformView {
     private var viewId: Int64
     private var tabBarItems: [UITabBarItem] = []
     private var isUpdatingProgrammatically = false
+    private var lastReportedBottomSafeArea: CGFloat = -1
     
     init(
         frame: CGRect,
@@ -57,7 +68,6 @@ class NativeIOSBottomNavBarView: NSObject, FlutterPlatformView {
         tabBar.delegate = self
         tabBar.isTranslucent = false
         tabBar.frame = _view.bounds
-        tabBar.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         if #available(iOS 13.4, *) {
             tabBar.addInteraction(UIPointerInteraction(delegate: nil))
         }
@@ -78,14 +88,25 @@ class NativeIOSBottomNavBarView: NSObject, FlutterPlatformView {
         // and Arabic font metrics are ready
         _view.onDidMoveToWindow = { [weak self] in
             guard let self = self else { return }
-            // Force layout update after view has moved to window
-            // This ensures Arabic text is properly calculated
             DispatchQueue.main.async {
+                self.reportBottomSafeAreaIfNeeded()
                 self.forceLayoutUpdate()
                 self.updateForSizeClass()
                 let selectedIndex = self.tabBar.selectedItem.flatMap { self.tabBarItems.firstIndex(of: $0) } ?? 0
                 self.updateItemColors(selectedIndex: selectedIndex)
             }
+        }
+        
+        _view.onSafeAreaInsetsDidChange = { [weak self] in
+            guard let self = self else { return }
+            DispatchQueue.main.async {
+                self.reportBottomSafeAreaIfNeeded()
+                self.forceLayoutUpdate()
+            }
+        }
+
+        _view.onLayoutSubviews = { [weak self] in
+            self?.layoutTabBarFrame()
         }
         
         // Monitor trait collection changes (for iPad Split View / Slide Over)
@@ -109,6 +130,21 @@ class NativeIOSBottomNavBarView: NSObject, FlutterPlatformView {
     
     func view() -> UIView {
         return _view
+    }
+
+    private func currentBottomSafeAreaInset() -> CGFloat {
+        _view.window?.safeAreaInsets.bottom ?? _view.safeAreaInsets.bottom
+    }
+
+    private func reportBottomSafeAreaIfNeeded() {
+        let bottomInset = currentBottomSafeAreaInset()
+        guard bottomInset != lastReportedBottomSafeArea else { return }
+        lastReportedBottomSafeArea = bottomInset
+        methodChannel.invokeMethod(
+            "onBottomSafeAreaChanged",
+            arguments: Double(bottomInset),
+            result: { _ in }
+        )
     }
 
     private func applyMaterialBrightness(from args: [String: Any]) {
@@ -279,7 +315,15 @@ class NativeIOSBottomNavBarView: NSObject, FlutterPlatformView {
         updateItemColors(selectedIndex: selectedIndex)
     }
     
+    private func layoutTabBarFrame() {
+        // Flutter sizes the platform view as content height + native bottom inset.
+        // Fill the full bounds so the tab bar background extends into the home-indicator area.
+        tabBar.frame = _view.bounds
+    }
+
     private func forceLayoutUpdate() {
+        layoutTabBarFrame()
+
         // Invalidate intrinsic content size to force recalculation
         tabBar.invalidateIntrinsicContentSize()
         
@@ -714,6 +758,11 @@ class NativeIOSBottomNavBarView: NSObject, FlutterPlatformView {
                 } else {
                     result(FlutterError(code: "INVALID_ARGUMENTS", message: "Invalid arguments", details: nil))
                 }
+
+            case "getBottomSafeArea":
+                let bottomInset = self.currentBottomSafeAreaInset()
+                self.lastReportedBottomSafeArea = bottomInset
+                result(Double(bottomInset))
                 
             default:
                 result(FlutterMethodNotImplemented)

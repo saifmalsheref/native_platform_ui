@@ -103,7 +103,6 @@ class NativeIOSBottomNavigationBar extends StatefulWidget {
     this.unselectedTintColor,
     this.materialBrightness,
     this.height = 60,
-    this.bottomMargin = 20,
     this.iconSize,
     this.activeIconSize,
   });
@@ -118,7 +117,6 @@ class NativeIOSBottomNavigationBar extends StatefulWidget {
   final Brightness? materialBrightness;
 
   final double height;
-  final double bottomMargin;
 
   /// Default icon size in points when [IOSNavItem.iconSize] is null.
   final double? iconSize;
@@ -141,6 +139,7 @@ class _NativeIOSBottomNavigationBarState
 
   MethodChannel? _channel;
   bool _isPlatformViewCreated = false;
+  double _nativeBottomSafeArea = 0;
 
   List<Map<String, dynamic>>? _preparedItemsData;
   int _prepareGeneration = 0;
@@ -261,10 +260,13 @@ class _NativeIOSBottomNavigationBarState
     _channel?.setMethodCallHandler(null);
     _channel = null;
     _isPlatformViewCreated = false;
+    _nativeBottomSafeArea = 0;
     _lastItemsNativeFingerprint = null;
     _lastSentSelectedIndex = null;
     _lastSentChromeFingerprint = null;
   }
+
+  double get _totalHeight => widget.height + _nativeBottomSafeArea;
 
   Future<void> _prepareItemsData() async {
     final int gen = ++_prepareGeneration;
@@ -325,19 +327,39 @@ class _NativeIOSBottomNavigationBarState
 
   void _setupMethodChannel() {
     _channel?.setMethodCallHandler((MethodCall call) async {
-      if (call.method != 'onItemSelected') {
-        return;
-      }
-      final int? index = _parseItemIndex(call.arguments);
-      if (index == null) {
-        return;
-      }
-      _pendingUserSelectedIndex = index;
-      _lastSentSelectedIndex = index;
-      if (mounted) {
-        widget.onChanged?.call(index);
+      switch (call.method) {
+        case 'onItemSelected':
+          final int? index = _parseItemIndex(call.arguments);
+          if (index == null) {
+            return;
+          }
+          _pendingUserSelectedIndex = index;
+          _lastSentSelectedIndex = index;
+          if (mounted) {
+            widget.onChanged?.call(index);
+          }
+        case 'onBottomSafeAreaChanged':
+          _handleBottomSafeAreaChanged(call.arguments);
       }
     });
+  }
+
+  void _handleBottomSafeAreaChanged(Object? arguments) {
+    final double? inset = _parseBottomSafeArea(arguments);
+    if (inset == null || !mounted || inset == _nativeBottomSafeArea) {
+      return;
+    }
+    setState(() => _nativeBottomSafeArea = inset);
+  }
+
+  double? _parseBottomSafeArea(Object? arguments) {
+    if (arguments is double) {
+      return arguments;
+    }
+    if (arguments is num) {
+      return arguments.toDouble();
+    }
+    return null;
   }
 
   int? _parseItemIndex(Object? arguments) {
@@ -348,6 +370,24 @@ class _NativeIOSBottomNavigationBarState
       return arguments.toInt();
     }
     return null;
+  }
+
+  Future<void> _fetchBottomSafeAreaFromNative() async {
+    if (_channel == null || !_isPlatformViewCreated) {
+      return;
+    }
+    final MethodChannel ch = _channel!;
+    try {
+      final Object? result = await ch.invokeMethod<Object?>('getBottomSafeArea');
+      if (!mounted || _channel != ch || !_isPlatformViewCreated) {
+        return;
+      }
+      _handleBottomSafeAreaChanged(result);
+    } on PlatformException catch (e) {
+      if (_isDeallocatedError(e)) {
+        _detachNativeViewBridge();
+      }
+    } catch (_) {}
   }
 
   Future<void> _pushSelectedIndex(int index) async {
@@ -512,12 +552,11 @@ class _NativeIOSBottomNavigationBarState
 
     final List<Map<String, dynamic>>? prepared = _preparedItemsData;
     if (prepared == null) {
-      return SizedBox(height: widget.height + widget.bottomMargin);
+      return SizedBox(height: _totalHeight);
     }
 
-    return Container(
-      margin: EdgeInsets.only(bottom: widget.bottomMargin),
-      height: widget.height,
+    return SizedBox(
+      height: _totalHeight,
       child: UiKitView(
         viewType: _viewType,
         creationParams: <String, Object?>{
@@ -535,6 +574,7 @@ class _NativeIOSBottomNavigationBarState
           _lastSentChromeFingerprint = null;
           _channel = MethodChannel('$_channelPrefix$id');
           _setupMethodChannel();
+          await _fetchBottomSafeAreaFromNative();
           await _syncToNative();
         },
       ),

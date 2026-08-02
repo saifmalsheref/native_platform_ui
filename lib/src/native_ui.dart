@@ -144,7 +144,6 @@ abstract final class NativeUi {
     Color? unselectedTintColor,
     Brightness? materialBrightness,
     double height = 60,
-    double bottomMargin = 20,
     double? iconSize,
     double? activeIconSize,
   }) {
@@ -157,7 +156,6 @@ abstract final class NativeUi {
       unselectedTintColor: unselectedTintColor,
       materialBrightness: materialBrightness,
       height: height,
-      bottomMargin: bottomMargin,
       iconSize: iconSize,
       activeIconSize: activeIconSize,
     );
