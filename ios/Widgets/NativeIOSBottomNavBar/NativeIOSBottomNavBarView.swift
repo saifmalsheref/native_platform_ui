@@ -34,6 +34,12 @@ private class TabBarContainerView: UIView {
     }
 }
 
+private enum PadBottomNavDisplayMode: Int {
+    case iconsOnly = 0
+    case iconsAndLabels = 1
+    case labelsOnly = 2
+}
+
 class NativeIOSBottomNavBarView: NSObject, FlutterPlatformView {
     private var _view: TabBarContainerView
     private var tabBar: UITabBar
@@ -42,6 +48,11 @@ class NativeIOSBottomNavBarView: NSObject, FlutterPlatformView {
     private var tabBarItems: [UITabBarItem] = []
     private var isUpdatingProgrammatically = false
     private var lastReportedBottomSafeArea: CGFloat = -1
+    private var padDisplayMode: PadBottomNavDisplayMode = .iconsOnly
+    private var titleFontSize: CGFloat = 11
+    private var padTitleFontSize: CGFloat = 13
+    private var didRefreshAfterValidLayout = false
+    private var presentationRefreshGeneration = 0
     
     init(
         frame: CGRect,
@@ -88,13 +99,8 @@ class NativeIOSBottomNavBarView: NSObject, FlutterPlatformView {
         // and Arabic font metrics are ready
         _view.onDidMoveToWindow = { [weak self] in
             guard let self = self else { return }
-            DispatchQueue.main.async {
-                self.reportBottomSafeAreaIfNeeded()
-                self.forceLayoutUpdate()
-                self.updateForSizeClass()
-                let selectedIndex = self.tabBar.selectedItem.flatMap { self.tabBarItems.firstIndex(of: $0) } ?? 0
-                self.updateItemColors(selectedIndex: selectedIndex)
-            }
+            self.didRefreshAfterValidLayout = false
+            self.schedulePresentationRefresh(delays: [0, 0.05, 0.15])
         }
         
         _view.onSafeAreaInsetsDidChange = { [weak self] in
@@ -106,7 +112,16 @@ class NativeIOSBottomNavBarView: NSObject, FlutterPlatformView {
         }
 
         _view.onLayoutSubviews = { [weak self] in
-            self?.layoutTabBarFrame()
+            guard let self = self else { return }
+            self.layoutTabBarFrame()
+            // After route push, first non-zero layout is when Arabic selected titles can measure correctly.
+            if !self.didRefreshAfterValidLayout,
+               self._view.window != nil,
+               self._view.bounds.width > 1,
+               self._view.bounds.height > 1 {
+                self.didRefreshAfterValidLayout = true
+                self.refreshTabBarPresentation()
+            }
         }
         
         // Monitor trait collection changes (for iPad Split View / Slide Over)
@@ -167,6 +182,30 @@ class NativeIOSBottomNavBarView: NSObject, FlutterPlatformView {
         tabBar.overrideUserInterfaceStyle = style
     }
     
+    private func parsePadDisplayMode(from args: [String: Any]) -> PadBottomNavDisplayMode {
+        let raw: Int = {
+            if let v = args["padDisplayMode"] as? Int { return v }
+            if let n = args["padDisplayMode"] as? NSNumber { return n.intValue }
+            return PadBottomNavDisplayMode.iconsOnly.rawValue
+        }()
+        return PadBottomNavDisplayMode(rawValue: raw) ?? .iconsOnly
+    }
+
+    private func parseFontSize(_ value: Any?, fallback: CGFloat) -> CGFloat {
+        if let value = value as? Double {
+            return CGFloat(value)
+        }
+        if let value = value as? NSNumber {
+            return CGFloat(value.doubleValue)
+        }
+        return fallback
+    }
+
+    private func applyTitleFontSizes(from args: [String: Any]) {
+        titleFontSize = parseFontSize(args["titleFontSize"], fallback: 11)
+        padTitleFontSize = parseFontSize(args["padTitleFontSize"], fallback: 13)
+    }
+
     private func setupTabBar(with args: [String: Any]) {
         guard let itemsData = args["items"] as? [[String: Any?]] else {
             return
@@ -176,6 +215,8 @@ class NativeIOSBottomNavBarView: NSObject, FlutterPlatformView {
         let tintColorValue = args["tintColor"] as? Int
         let unselectedTintColorValue = args["unselectedTintColor"] as? Int
 
+        padDisplayMode = parsePadDisplayMode(from: args)
+        applyTitleFontSizes(from: args)
         applyMaterialBrightness(from: args)
         
         // Create tab bar items
@@ -259,54 +300,94 @@ class NativeIOSBottomNavBarView: NSObject, FlutterPlatformView {
         updateItemColors(selectedIndex: selectedIndex)
     }
     
-    /// iPhone / iPad compact width: stacked icon + title.
-    private func regularWidthTabBarTitleFont() -> UIFont? {
-        guard _view.traitCollection.horizontalSizeClass == .compact else { return nil }
-        let base = UIFont.systemFont(ofSize: 11, weight: .medium)
-        return UIFontMetrics.default.scaledFont(for: base, maximumPointSize: 14)
-    }
-    
-    /// iPad regular width (full screen): icons only, no tab titles.
-    private var isPadIconsOnlyLayout: Bool {
+    private var isRegularWidth: Bool {
         _view.traitCollection.horizontalSizeClass != .compact
+    }
+
+    /// Compact width always shows icons + titles; iPad regular width follows [padDisplayMode].
+    private var showsIcons: Bool {
+        guard isRegularWidth else { return true }
+        switch padDisplayMode {
+        case .iconsOnly, .iconsAndLabels:
+            return true
+        case .labelsOnly:
+            return false
+        }
+    }
+
+    private var showsTitles: Bool {
+        guard isRegularWidth else { return true }
+        switch padDisplayMode {
+        case .iconsOnly:
+            return false
+        case .iconsAndLabels, .labelsOnly:
+            return true
+        }
+    }
+
+    private func tabBarTitleFont() -> UIFont? {
+        guard showsTitles else { return nil }
+        if isRegularWidth {
+            return UIFont.systemFont(ofSize: padTitleFontSize, weight: .medium)
+        }
+        let base = UIFont.systemFont(ofSize: titleFontSize, weight: .medium)
+        let maxPointSize = max(titleFontSize + 3, titleFontSize)
+        return UIFontMetrics.default.scaledFont(for: base, maximumPointSize: maxPointSize)
+    }
+
+    private func schedulePresentationRefresh(delays: [TimeInterval]) {
+        presentationRefreshGeneration += 1
+        let generation = presentationRefreshGeneration
+        for delay in delays {
+            let run = { [weak self] in
+                guard let self = self, self.presentationRefreshGeneration == generation else { return }
+                self.refreshTabBarPresentation()
+            }
+            if delay <= 0 {
+                DispatchQueue.main.async(execute: run)
+            } else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: run)
+            }
+        }
+    }
+
+    private func refreshTabBarPresentation() {
+        guard _view.window != nil else { return }
+        reportBottomSafeAreaIfNeeded()
+        forceLayoutUpdate()
+        updateForSizeClass()
+        let selectedIndex = tabBar.selectedItem.flatMap { tabBarItems.firstIndex(of: $0) } ?? 0
+        if #available(iOS 13.0, *) {
+            applyItemSpecificColors(selectedIndex: selectedIndex)
+        }
+        updateItemColors(selectedIndex: selectedIndex)
     }
     
     private func updateForSizeClass() {
-        let isCompact = _view.traitCollection.horizontalSizeClass == .compact
         let selectedIndex = tabBar.selectedItem.flatMap { tabBarItems.firstIndex(of: $0) } ?? 0
         
         for (index, item) in tabBarItems.enumerated() {
-            if isCompact {
-                // iPad Split View / Slide Over (iPhone-style) → ICON + TEXT
+            if showsIcons {
                 if let normalImage = originalImages[index] {
-                    let template = normalImage.withRenderingMode(.alwaysTemplate)
-                    item.image = template
+                    item.image = normalImage.withRenderingMode(.alwaysTemplate)
                 }
                 if let selectedImage = originalSelectedImages[index] {
-                    let template = selectedImage.withRenderingMode(.alwaysTemplate)
-                    item.selectedImage = template
+                    item.selectedImage = selectedImage.withRenderingMode(.alwaysTemplate)
                 } else if let normalImage = originalImages[index] {
-                    let template = normalImage.withRenderingMode(.alwaysTemplate)
-                    item.selectedImage = template
+                    item.selectedImage = normalImage.withRenderingMode(.alwaysTemplate)
                 }
-                item.title = originalTitles[index]
-                item.titlePositionAdjustment = .zero
             } else {
-                // iPad full screen → ICON ONLY (no titles)
-                if let normalImage = originalImages[index] {
-                    let template = normalImage.withRenderingMode(.alwaysTemplate)
-                    item.image = template
-                }
-                if let selectedImage = originalSelectedImages[index] {
-                    let template = selectedImage.withRenderingMode(.alwaysTemplate)
-                    item.selectedImage = template
-                } else if let normalImage = originalImages[index] {
-                    let template = normalImage.withRenderingMode(.alwaysTemplate)
-                    item.selectedImage = template
-                }
-                item.title = nil
-                item.titlePositionAdjustment = .zero
+                item.image = nil
+                item.selectedImage = nil
             }
+
+            // Clear then restore title so UITabBar recreates the label layer
+            // (fixes tiny/corrupt Arabic selected titles after navigation).
+            item.title = nil
+            if showsTitles {
+                item.title = originalTitles[index]
+            }
+            item.titlePositionAdjustment = .zero
         }
         
         forceLayoutUpdate()
@@ -496,7 +577,7 @@ class NativeIOSBottomNavBarView: NSObject, FlutterPlatformView {
         appearance.backgroundColor = UIColor.systemBackground
         appearance.shadowColor = .clear
         
-        let titleFont = regularWidthTabBarTitleFont()
+        let titleFont = tabBarTitleFont()
         
         // Apply colors for each item
         for (index, item) in tabBarItems.enumerated() {
@@ -566,21 +647,18 @@ class NativeIOSBottomNavBarView: NSObject, FlutterPlatformView {
     }
     
     private func updateItemColors(selectedIndex: Int) {
-        let isCompact = _view.traitCollection.horizontalSizeClass == .compact
-        let iconsOnly = isPadIconsOnlyLayout
-        let titleFont = regularWidthTabBarTitleFont()
+        let titleFont = tabBarTitleFont()
         
-        // Use CATransaction to ensure immediate UI update
+        // Disable animations: liquid-glass selection morph during mount leaves
+        // Arabic selected titles at the wrong size until the next interaction.
         CATransaction.begin()
-        CATransaction.setDisableActions(false)
-        CATransaction.setAnimationDuration(0)
+        CATransaction.setDisableActions(true)
         
         for (index, item) in tabBarItems.enumerated() {
             let colors = itemColors[index]
             let isSelected = index == selectedIndex
             
-            // iPad icons-only: hide titles; iPhone / compact iPad: show title styling
-            if iconsOnly {
+            if !showsTitles {
                 item.title = nil
                 item.setTitleTextAttributes([:], for: .normal)
                 item.setTitleTextAttributes([:], for: .selected)
@@ -591,6 +669,7 @@ class NativeIOSBottomNavBarView: NSObject, FlutterPlatformView {
                 }
                 item.setTitleTextAttributes(attrs, for: .normal)
                 item.setTitleTextAttributes(attrs, for: .selected)
+                item.title = originalTitles[index]
             } else {
                 if let titleFont = titleFont {
                     item.setTitleTextAttributes(
@@ -611,10 +690,10 @@ class NativeIOSBottomNavBarView: NSObject, FlutterPlatformView {
                     item.setTitleTextAttributes([:], for: .normal)
                     item.setTitleTextAttributes([:], for: .selected)
                 }
+                item.title = originalTitles[index]
             }
             
-            // Update icon colors when icons are visible (compact or iPad icons-only)
-            if isCompact || iconsOnly {
+            if showsIcons {
                 // CRITICAL: For custom icon colors, use withTintColor with sRGB color
                 // The UIColor(hex:) extension ensures sRGB color space, preventing Display-P3 conversion
                 if let iconColor = isSelected ? colors?.activeImageColor : colors?.inactiveImageColor {
@@ -646,6 +725,9 @@ class NativeIOSBottomNavBarView: NSObject, FlutterPlatformView {
                         item.selectedImage = originalImage.withRenderingMode(.alwaysTemplate)
                     }
                 }
+            } else {
+                item.image = nil
+                item.selectedImage = nil
             }
         }
         
@@ -681,10 +763,8 @@ class NativeIOSBottomNavBarView: NSObject, FlutterPlatformView {
                         // Only update if it's different from current selection
                         // This prevents unnecessary updates that might interfere with user taps
                         if self.tabBar.selectedItem != targetItem {
-                            // Use CATransaction to ensure immediate, synchronized UI update
                             CATransaction.begin()
-                            CATransaction.setDisableActions(false)
-                            CATransaction.setAnimationDuration(0)
+                            CATransaction.setDisableActions(true)
                             
                             // Set flag to prevent delegate callback during programmatic update
                             self.isUpdatingProgrammatically = true
@@ -696,15 +776,14 @@ class NativeIOSBottomNavBarView: NSObject, FlutterPlatformView {
                             if #available(iOS 13.0, *) {
                                 self.updateItemColors(selectedIndex: index)
                             } else {
-                                // Force layout update even on older iOS versions
                                 self.forceLayoutUpdate()
                             }
                             
                             CATransaction.commit()
                             
-                            // Reset flag after a short delay to ensure UI update completes
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-                                self?.isUpdatingProgrammatically = false
+                            self.isUpdatingProgrammatically = false
+                            if self.showsTitles {
+                                self.schedulePresentationRefresh(delays: [0.05, 0.15])
                             }
                         }
                         
@@ -744,10 +823,13 @@ class NativeIOSBottomNavBarView: NSObject, FlutterPlatformView {
                                 hex: UInt32(unselectedTintColorValue)
                             )
                         }
+                        self.padDisplayMode = self.parsePadDisplayMode(from: args)
+                        self.applyTitleFontSizes(from: args)
                         self.applyMaterialBrightness(from: args)
                         let selectedIndex = self.tabBar.selectedItem.flatMap {
                             self.tabBarItems.firstIndex(of: $0)
                         } ?? 0
+                        self.updateForSizeClass()
                         if #available(iOS 13.0, *) {
                             self.applyItemSpecificColors(selectedIndex: selectedIndex)
                         }
@@ -833,11 +915,7 @@ class NativeIOSBottomNavBarView: NSObject, FlutterPlatformView {
             
             // Force immediate UI update after recreating items
             forceLayoutUpdate()
-            
-            // Schedule additional update to ensure Arabic text renders correctly
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-                self?.forceLayoutUpdate()
-            }
+            schedulePresentationRefresh(delays: [0.05, 0.15])
             return
         }
         
@@ -858,7 +936,7 @@ class NativeIOSBottomNavBarView: NSObject, FlutterPlatformView {
             
             // Update title
             originalTitles[index] = title
-            item.title = isPadIconsOnlyLayout ? nil : title
+            item.title = showsTitles ? title : nil
 
             let activeTextColorValue = itemData["activeTextColor"] as? Int
             let inactiveTextColorValue = itemData["inactiveTextColor"] as? Int
@@ -952,12 +1030,7 @@ class NativeIOSBottomNavBarView: NSObject, FlutterPlatformView {
         // Force immediate UI update after modifying items
         forceLayoutUpdate()
         updateForSizeClass()
-        
-        // Schedule additional update to ensure Arabic text renders correctly
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            self?.forceLayoutUpdate()
-            self?.updateForSizeClass()
-        }
+        schedulePresentationRefresh(delays: [0.05, 0.15])
     }
 
 }

@@ -35,6 +35,20 @@ int _iosNavItemsFingerprint(List<IOSNavItem> items) {
   return Object.hashAll(items.map((IOSNavItem e) => e.hashCode));
 }
 
+/// How [NativeIOSBottomNavigationBar] renders items on iPad regular width.
+///
+/// Compact width (iPhone / iPad Split View) always uses icons and labels.
+enum IOSPadBottomNavDisplayMode {
+  /// Icons only (default).
+  iconsOnly,
+
+  /// Icons and titles, same as iPhone.
+  iconsAndLabels,
+
+  /// Titles only.
+  labelsOnly,
+}
+
 /// Model for iOS navigation bar items.
 class IOSNavItem {
   const IOSNavItem({
@@ -105,6 +119,9 @@ class NativeIOSBottomNavigationBar extends StatefulWidget {
     this.height = 60,
     this.iconSize,
     this.activeIconSize,
+    this.padDisplayMode = IOSPadBottomNavDisplayMode.iconsOnly,
+    this.titleFontSize,
+    this.padTitleFontSize,
   });
 
   final List<IOSNavItem> items;
@@ -123,6 +140,15 @@ class NativeIOSBottomNavigationBar extends StatefulWidget {
 
   /// Default active icon size in points when [IOSNavItem.activeIconSize] is null.
   final double? activeIconSize;
+
+  /// iPad regular-width item layout. Default is [IOSPadBottomNavDisplayMode.iconsOnly].
+  final IOSPadBottomNavDisplayMode padDisplayMode;
+
+  /// Title font size for compact width (iPhone / iPad Split View). Default `11`.
+  final double? titleFontSize;
+
+  /// Title font size for iPad regular width. Default `13`.
+  final double? padTitleFontSize;
 
   @override
   State<NativeIOSBottomNavigationBar> createState() =>
@@ -231,7 +257,10 @@ class _NativeIOSBottomNavigationBarState
       unawaited(_syncToNative());
     }
 
-    if (widget.materialBrightness != oldWidget.materialBrightness &&
+    if ((widget.materialBrightness != oldWidget.materialBrightness ||
+            widget.padDisplayMode != oldWidget.padDisplayMode ||
+            widget.titleFontSize != oldWidget.titleFontSize ||
+            widget.padTitleFontSize != oldWidget.padTitleFontSize) &&
         _isPlatformViewCreated) {
       _lastSentChromeFingerprint = null;
       unawaited(_pushChromeIfNeeded());
@@ -309,11 +338,16 @@ class _NativeIOSBottomNavigationBarState
     return widget.selectedIndex.clamp(0, max);
   }
 
+  int _padDisplayModeCodec() => widget.padDisplayMode.index;
+
   int _chromeFingerprint(BuildContext context) {
     return Object.hash(
       widget.tintColor?.toARGB32(),
       widget.unselectedTintColor?.toARGB32(),
       _materialCodecFor(context),
+      _padDisplayModeCodec(),
+      widget.titleFontSize,
+      widget.padTitleFontSize,
     );
   }
 
@@ -322,6 +356,9 @@ class _NativeIOSBottomNavigationBarState
       'tintColor': widget.tintColor?.toARGB32(),
       'unselectedTintColor': widget.unselectedTintColor?.toARGB32(),
       'materialBrightness': _materialCodecFor(context),
+      'padDisplayMode': _padDisplayModeCodec(),
+      'titleFontSize': widget.titleFontSize,
+      'padTitleFontSize': widget.padTitleFontSize,
     };
   }
 
@@ -565,6 +602,9 @@ class _NativeIOSBottomNavigationBarState
           'tintColor': widget.tintColor?.toARGB32(),
           'unselectedTintColor': widget.unselectedTintColor?.toARGB32(),
           'materialBrightness': _materialCodecFor(context),
+          'padDisplayMode': _padDisplayModeCodec(),
+          'titleFontSize': widget.titleFontSize,
+          'padTitleFontSize': widget.padTitleFontSize,
         },
         creationParamsCodec: const StandardMessageCodec(),
         onPlatformViewCreated: (int id) async {

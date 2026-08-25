@@ -76,7 +76,7 @@ enum SfSymbols {
   person2('person.2'),
   personFill('person.fill'),
   barcode('barcode'),
-  ;
+  switch2('switch.2');
 
   final String value;
   const SfSymbols(this.value);

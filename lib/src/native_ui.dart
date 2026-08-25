@@ -146,6 +146,10 @@ abstract final class NativeUi {
     double height = 60,
     double? iconSize,
     double? activeIconSize,
+    IOSPadBottomNavDisplayMode padDisplayMode =
+        IOSPadBottomNavDisplayMode.iconsOnly,
+    double? titleFontSize,
+    double? padTitleFontSize,
   }) {
     return NativeIOSBottomNavigationBar(
       key: key,
@@ -158,6 +162,9 @@ abstract final class NativeUi {
       height: height,
       iconSize: iconSize,
       activeIconSize: activeIconSize,
+      padDisplayMode: padDisplayMode,
+      titleFontSize: titleFontSize,
+      padTitleFontSize: padTitleFontSize,
     );
   }
 
