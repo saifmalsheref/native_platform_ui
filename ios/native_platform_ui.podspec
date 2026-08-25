@@ -14,7 +14,8 @@ alerts, popovers, and bottom navigation via platform views.
   s.license          = { :file => '../LICENSE' }
   s.author           = { 'Your Company' => 'email@example.com' }
   s.source           = { :path => '.' }
-  s.source_files = 'Classes/**/*', 'Widgets/**/*'
+  s.source_files = 'native_platform_ui/Sources/native_platform_ui/**/*.swift'
+  s.resource_bundles = {'native_platform_ui_privacy' => ['native_platform_ui/Sources/native_platform_ui/PrivacyInfo.xcprivacy']}
   s.dependency 'Flutter'
   s.platform = :ios, '15.0'
 
