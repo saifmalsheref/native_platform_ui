@@ -2,7 +2,7 @@ name: native_platform_ui
 description: >-
   Native iOS UI for Flutter — buttons, switches, SF Symbols, liquid glass,
   alerts, popovers, and bottom navigation via platform views.
-version: 0.0.4
+version: 0.0.5
 homepage:
 
 environment:
